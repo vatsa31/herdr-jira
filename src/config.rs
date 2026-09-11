@@ -324,4 +324,37 @@ mod tests {
         assert_eq!(cfg.delegate.submit_delay_ms, 789);
         assert_eq!(cfg.delegate.agents.len(), 3);
     }
+
+    #[test]
+    fn sidebar_jql_prefers_named_filter_then_first_then_fallback() {
+        let mut cfg = Config::default_mock();
+        assert_eq!(
+            cfg.sidebar_jql(),
+            "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"
+        );
+        cfg.filters = vec![
+            Filter {
+                name: "A".into(),
+                jql: "jql-a".into(),
+            },
+            Filter {
+                name: "B".into(),
+                jql: "jql-b".into(),
+            },
+        ];
+        assert_eq!(cfg.sidebar_jql(), "jql-a");
+        cfg.sidebar.filter = Some("B".into());
+        assert_eq!(cfg.sidebar_jql(), "jql-b");
+        cfg.sidebar.filter = Some("missing".into());
+        assert_eq!(cfg.sidebar_jql(), "jql-a");
+    }
+
+    #[test]
+    fn sidebar_config_is_additive_with_defaults() {
+        let cfg: Config =
+            toml::from_str("[jira]\nbase_url = \"https://x.atlassian.net\"\n").unwrap();
+        assert!(cfg.sidebar.enabled);
+        assert_eq!(cfg.sidebar.refresh_secs, None);
+        assert_eq!(cfg.sidebar_title(), "My Jira issues");
+    }
 }

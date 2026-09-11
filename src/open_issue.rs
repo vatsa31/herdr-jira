@@ -23,13 +23,22 @@ pub fn run() -> Result<(), String> {
 fn issue_key_from_env() -> Result<String, String> {
     for name in ["HERDR_PLUGIN_ITEM_PAYLOAD", "HERDR_PLUGIN_ITEM_ID"] {
         if let Ok(value) = std::env::var(name) {
-            let key = value.trim();
+            let key = sanitize_key(&value);
             if !key.is_empty() {
-                return Ok(key.to_string());
+                return Ok(key);
             }
         }
     }
     Err("open-issue requires HERDR_PLUGIN_ITEM_ID or HERDR_PLUGIN_ITEM_PAYLOAD".into())
+}
+
+fn sanitize_key(raw: &str) -> String {
+    raw.chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn state_dir() -> PathBuf {
@@ -122,5 +131,28 @@ fn focus_or_open_jira_pane() -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("herdr plugin pane open exited with {status}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_key_strips_controls_and_trims() {
+        assert_eq!(sanitize_key("  MOCK-1  "), "MOCK-1");
+        assert_eq!(sanitize_key("a\x1bb"), "a b");
+        assert_eq!(sanitize_key("   "), "");
+    }
+
+    #[test]
+    fn next_seq_is_monotonic() {
+        let dir = std::env::temp_dir().join(format!("herdr-jira-seq-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let first = next_seq(&dir).unwrap();
+        let second = next_seq(&dir).unwrap();
+        assert!(second > first);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

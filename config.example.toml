@@ -123,6 +123,12 @@ command = ["grok"]
 
 [sidebar]
 enabled = true
+# Poll interval is governed by the manifest `refresh_secs` (60s default,
+# clamped 5–3600 by Herdr); `refresh_secs` below is currently informational
+# and does not override the manifest value.
 # refresh_secs = 60
 # title = "My Jira issues"
+# Sidebar issue list uses `filter` when set, else the first [[filters]] entry,
+# else this fallback (documented default, also used when no [[filters]] exist):
+#   assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC
 # filter = "My open issues"

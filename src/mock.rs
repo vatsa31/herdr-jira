@@ -20,6 +20,7 @@ pub fn mock_scenario() -> &'static str {
         "unicode" => "unicode",
         "failure" => "failure",
         "malformed" => "malformed",
+        "delayed" => "delayed",
         "recovery" => "recovery",
         "reorder" => "reorder",
         _ => "few",
@@ -34,6 +35,14 @@ pub fn mock_search(scenario: &str) -> Result<SearchResult, String> {
             truncated: false,
         }),
         "failure" => Err("mock Jira provider failure".into()),
+        "delayed" => Ok(SearchResult {
+            issues: vec![
+                issue("MOCK-142", "Fix login timeout", "In Progress"),
+                issue("MOCK-137", "Add export option", "To Do"),
+            ],
+            matched_count: Some(2),
+            truncated: false,
+        }),
         "few" => Ok(SearchResult {
             issues: vec![
                 issue("MOCK-142", "Fix login timeout", "In Progress"),
@@ -89,5 +98,25 @@ fn issue(key: impl Into<String>, summary: impl Into<String>, status: impl Into<S
         labels: vec![],
         description: String::new(),
         url: format!("https://mock.example/browse/{key}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scenario_matrix_covers_spec_cases() {
+        assert!(mock_search("empty").unwrap().issues.is_empty());
+        assert_eq!(mock_search("few").unwrap().issues.len(), 3);
+        let long = mock_search("long").unwrap();
+        assert_eq!(long.issues.len(), 40);
+        assert!(long.truncated);
+        assert_eq!(long.matched_count, Some(128));
+        assert_eq!(mock_search("unicode").unwrap().issues.len(), 2);
+        assert!(mock_search("failure").is_err());
+        assert!(mock_search("delayed").unwrap().issues.len() >= 2);
+        assert_eq!(mock_search("reorder").unwrap().issues.len(), 3);
+        assert!(mock_search("bogus").is_err());
     }
 }
