@@ -15,6 +15,31 @@ pub struct Config {
     pub search: SearchConfig,
     #[serde(default)]
     pub delegate: DelegateConfig,
+    #[serde(default)]
+    pub sidebar: SidebarConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SidebarConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub refresh_secs: Option<u64>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub filter: Option<String>,
+}
+
+impl Default for SidebarConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            refresh_secs: None,
+            title: None,
+            filter: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -170,6 +195,52 @@ pub fn config_path() -> PathBuf {
 }
 
 impl Config {
+    pub fn default_mock() -> Self {
+        Self {
+            jira: JiraConfig {
+                base_url: "https://mock.example".into(),
+                auth: "basic".into(),
+                email: String::new(),
+                api_token: String::new(),
+                api_token_cmd: String::new(),
+                default_project: String::new(),
+                max_results: 50,
+            },
+            filters: vec![],
+            search: SearchConfig::default(),
+            delegate: DelegateConfig::default(),
+            sidebar: SidebarConfig::default(),
+        }
+    }
+
+    pub fn sidebar_title(&self) -> String {
+        self.sidebar
+            .title
+            .clone()
+            .filter(|title| !title.trim().is_empty())
+            .unwrap_or_else(|| "My Jira issues".into())
+    }
+
+    pub fn sidebar_jql(&self) -> String {
+        if let Some(name) = self
+            .sidebar
+            .filter
+            .as_ref()
+            .map(|name| name.trim())
+            .filter(|name| !name.is_empty())
+        {
+            if let Some(filter) = self.filters.iter().find(|filter| filter.name == name) {
+                return self.expand_jql(&filter.jql);
+            }
+        }
+        if let Some(filter) = self.filters.first() {
+            return self.expand_jql(&filter.jql);
+        }
+        self.expand_jql(
+            "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC",
+        )
+    }
+
     pub fn load() -> Result<Self, String> {
         let path = config_path();
         let raw = std::fs::read_to_string(&path).map_err(|e| {
@@ -252,5 +323,38 @@ mod tests {
         // Old configs remain parseable even though this setting is ignored.
         assert_eq!(cfg.delegate.submit_delay_ms, 789);
         assert_eq!(cfg.delegate.agents.len(), 3);
+    }
+
+    #[test]
+    fn sidebar_jql_prefers_named_filter_then_first_then_fallback() {
+        let mut cfg = Config::default_mock();
+        assert_eq!(
+            cfg.sidebar_jql(),
+            "assignee = currentUser() AND resolution = Unresolved ORDER BY updated DESC"
+        );
+        cfg.filters = vec![
+            Filter {
+                name: "A".into(),
+                jql: "jql-a".into(),
+            },
+            Filter {
+                name: "B".into(),
+                jql: "jql-b".into(),
+            },
+        ];
+        assert_eq!(cfg.sidebar_jql(), "jql-a");
+        cfg.sidebar.filter = Some("B".into());
+        assert_eq!(cfg.sidebar_jql(), "jql-b");
+        cfg.sidebar.filter = Some("missing".into());
+        assert_eq!(cfg.sidebar_jql(), "jql-a");
+    }
+
+    #[test]
+    fn sidebar_config_is_additive_with_defaults() {
+        let cfg: Config =
+            toml::from_str("[jira]\nbase_url = \"https://x.atlassian.net\"\n").unwrap();
+        assert!(cfg.sidebar.enabled);
+        assert_eq!(cfg.sidebar.refresh_secs, None);
+        assert_eq!(cfg.sidebar_title(), "My Jira issues");
     }
 }

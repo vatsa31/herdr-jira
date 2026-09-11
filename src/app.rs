@@ -107,6 +107,10 @@ pub struct App {
     pub detail_scroll: u16,
 
     pub toast: Option<(String, bool, Instant)>, // message, is_error, shown_at
+    pub last_open_issue_seq: u64,
+    /// Sidebar activation that arrived before the issue list was loaded.
+    /// Retried on the next successful `Resp::Issues`.
+    pub pending_open_issue_key: Option<String>,
 }
 
 impl App {
@@ -125,6 +129,7 @@ impl App {
                 filters: vec![],
                 search: Default::default(),
                 delegate: Default::default(),
+                sidebar: Default::default(),
             },
             client: None,
             tx,
@@ -156,9 +161,60 @@ impl App {
             last_jql: String::new(),
             detail_scroll: 0,
             toast: None,
+            last_open_issue_seq: 0,
+            pending_open_issue_key: None,
         };
         app.reload_config();
         app
+    }
+
+    pub fn apply_startup_open_issue(&mut self) {
+        let key = std::env::var("HERDR_JIRA_OPEN_ISSUE")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                std::env::args()
+                    .skip(1)
+                    .position(|arg| arg == "--open")
+                    .and_then(|index| std::env::args().nth(index + 1))
+            });
+        if let Some(key) = key {
+            self.deliver_issue_key(key.trim().to_string());
+        }
+    }
+
+    pub fn poll_open_issue_request(&mut self) {
+        if let Some(request) = crate::open_issue::read_latest_request() {
+            if request.seq > self.last_open_issue_seq {
+                self.last_open_issue_seq = request.seq;
+                self.deliver_issue_key(request.key);
+            }
+        }
+    }
+
+    pub fn deliver_issue_key(&mut self, key: String) {
+        let key = sanitize_display(&key);
+        if key.is_empty() {
+            return;
+        }
+        if let Some(index) = self
+            .visible()
+            .iter()
+            .position(|(issue, _)| issue.key == key)
+        {
+            self.selected = index;
+            self.view = View::Detail;
+            self.detail_scroll = 0;
+            self.pending_open_issue_key = None;
+            return;
+        }
+        // List may not be loaded yet (startup / filter fetch in flight):
+        // stash and retry on the next successful issue load instead of
+        // dropping the newest request.
+        if self.loading || self.issues.is_empty() {
+            self.pending_open_issue_key = Some(key.clone());
+        }
+        self.toast(format!("issue {key} is not in the current list"), true);
     }
 
     pub fn reload_config(&mut self) {
@@ -523,6 +579,9 @@ impl App {
                         self.expanded.clear();
                         self.loading_children.clear();
                         self.selected = self.selected.min(self.issues.len().saturating_sub(1));
+                        if let Some(pending) = self.pending_open_issue_key.take() {
+                            self.deliver_issue_key(pending);
+                        }
                     }
                     Err(e) => self.toast(format!("Jira: {e}"), true),
                 }
@@ -1055,6 +1114,23 @@ mod tests {
         issue.description = "  ".into();
         assert_eq!(build_prompt(&cfg, &issue), "(no description)");
     }
+
+    #[test]
+    fn sanitize_display_strips_controls() {
+        assert_eq!(sanitize_display("a\x1b[31mb"), "a [31mb");
+        assert_eq!(sanitize_display("  x  y  "), "x y");
+    }
+}
+
+/// Strip control characters and collapse whitespace for display/toast text
+/// derived from external issue keys. Mirrors `resource::sanitize`.
+fn sanitize_display(text: &str) -> String {
+    text.chars()
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Fill the delegate prompt template with issue fields.
