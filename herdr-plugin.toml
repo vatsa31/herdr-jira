@@ -30,6 +30,13 @@ title = "Jira"
 placement = "split"
 command = ["./target/release/herdr-jira"]
 
+[[resources]]
+id = "my-issues"
+title = "My Jira issues"
+command = ["./target/release/herdr-jira", "resource", "--id", "my-issues"]
+activate_command = ["./target/release/herdr-jira", "open-issue"]
+refresh_secs = 60
+
 # Open the Jira TUI in a split beside the current pane (focus if already open).
 [[actions]]
 id = "open-jira"

@@ -107,6 +107,7 @@ pub struct App {
     pub detail_scroll: u16,
 
     pub toast: Option<(String, bool, Instant)>, // message, is_error, shown_at
+    pub last_open_issue_seq: u64,
 }
 
 impl App {
@@ -125,6 +126,7 @@ impl App {
                 filters: vec![],
                 search: Default::default(),
                 delegate: Default::default(),
+                sidebar: Default::default(),
             },
             client: None,
             tx,
@@ -156,9 +158,48 @@ impl App {
             last_jql: String::new(),
             detail_scroll: 0,
             toast: None,
+            last_open_issue_seq: 0,
         };
         app.reload_config();
         app
+    }
+
+    pub fn apply_startup_open_issue(&mut self) {
+        let key = std::env::var("HERDR_JIRA_OPEN_ISSUE")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                std::env::args()
+                    .skip(1)
+                    .position(|arg| arg == "--open")
+                    .and_then(|index| std::env::args().nth(index + 1))
+            });
+        if let Some(key) = key {
+            self.deliver_issue_key(key.trim().to_string());
+        }
+    }
+
+    pub fn poll_open_issue_request(&mut self) {
+        if let Some(request) = crate::open_issue::read_latest_request() {
+            if request.seq > self.last_open_issue_seq {
+                self.last_open_issue_seq = request.seq;
+                self.deliver_issue_key(request.key);
+            }
+        }
+    }
+
+    pub fn deliver_issue_key(&mut self, key: String) {
+        if let Some(index) = self
+            .visible()
+            .iter()
+            .position(|(issue, _)| issue.key == key)
+        {
+            self.selected = index;
+            self.view = View::Detail;
+            self.detail_scroll = 0;
+            return;
+        }
+        self.toast(format!("issue {key} is not in the current list"), true);
     }
 
     pub fn reload_config(&mut self) {

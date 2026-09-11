@@ -27,6 +27,13 @@ pub struct Issue {
 }
 
 #[derive(Debug, Clone)]
+pub struct SearchResult {
+    pub issues: Vec<Issue>,
+    pub matched_count: Option<u64>,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct Transition {
     pub id: String,
     pub name: String,
@@ -109,6 +116,10 @@ impl JiraClient {
     }
 
     pub fn search(&self, jql: &str) -> Result<Vec<Issue>, String> {
+        self.search_with_meta(jql).map(|result| result.issues)
+    }
+
+    pub fn search_with_meta(&self, jql: &str) -> Result<SearchResult, String> {
         let max = self.max_results.to_string();
         let query: &[(&str, &str)] = &[
             ("jql", jql),
@@ -123,14 +134,28 @@ impl JiraClient {
             }
             Err(e) => Err(e),
         }?;
+        let total = result["total"].as_u64();
+        let is_last = result["isLast"].as_bool();
         let issues = result["issues"]
             .as_array()
             .cloned()
             .unwrap_or_default()
             .iter()
             .map(|v| self.parse_issue(v))
-            .collect();
-        Ok(issues)
+            .collect::<Vec<_>>();
+        let truncated = match (total, is_last) {
+            (Some(total), _) => total > issues.len() as u64,
+            (_, Some(false)) => true,
+            _ => false,
+        };
+        let matched_count = total.or_else(|| {
+            (truncated || !issues.is_empty()).then_some(issues.len() as u64)
+        });
+        Ok(SearchResult {
+            issues,
+            matched_count,
+            truncated,
+        })
     }
 
     fn parse_issue(&self, v: &Value) -> Issue {

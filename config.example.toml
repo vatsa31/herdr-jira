@@ -116,3 +116,13 @@ command = ["codex"]
 [[delegate.agents]]
 name = "grok"
 command = ["grok"]
+
+# --- Sidebar resource (optional) ---
+# Native Herdr sidebar list beneath Agents. Requires a Herdr build with plugin
+# resources. For mock development without Jira credentials: HERDR_JIRA_MOCK=1.
+
+[sidebar]
+enabled = true
+# refresh_secs = 60
+# title = "My Jira issues"
+# filter = "My open issues"
