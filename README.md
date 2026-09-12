@@ -1,5 +1,81 @@
 # herdr-jira
 
+> [!NOTE]
+> This is a fork of [a2u/herdr-jira](https://github.com/a2u/herdr-jira). The
+> upstream plugin provides the Jira terminal pane described below. This fork
+> adds a native Jira issue list to the Herdr sidebar and pairs with the custom
+> [`vatsa31/herdr`](https://github.com/vatsa31/herdr) host fork.
+
+## what this fork adds
+
+The original plugin opens Jira as a full terminal pane. This fork preserves that
+TUI—including filters, issue details, transitions, and agent delegation—and
+also makes the user's open issues visible while they work elsewhere in Herdr.
+
+```text
+Before                            With this fork
+────────────────────────          ──────────────────────────
+Open Jira in a split or tab       My Jira issues · 8
+to see any issues                   PROJ-142  Fix timeout
+                                              In Progress
+                                  Click → exact issue details
+```
+
+The fork adds:
+
+- a headless `herdr-jira resource --id my-issues` JSON provider that reuses the
+  existing Jira client, authentication, and JQL configuration;
+- a configurable `[sidebar]` section with named-filter selection and a safe
+  open-issues fallback;
+- automatic refresh through Herdr, truthful truncation/count metadata, mock
+  scenarios, and control-character sanitization;
+- exact-issue activation that opens or reuses a single Jira pane; and
+- sequenced request delivery so rapid selections resolve to the latest issue.
+
+The provider work is documented in
+[PR #1](https://github.com/vatsa31/herdr-jira/pull/1). Its companion generic
+host support is in
+[`vatsa31/herdr` PR #1](https://github.com/vatsa31/herdr/pull/1), with sidebar
+interaction fixes in
+[`vatsa31/herdr` PR #2](https://github.com/vatsa31/herdr/pull/2). The combined
+flow has been validated with mock data on Linux and real Jira data on Apple
+Silicon macOS, including issue loading, detail opening, and pane reuse.
+
+### use this fork
+
+Install the custom Herdr host first, then install this plugin fork:
+
+```bash
+herdr plugin install vatsa31/herdr-jira
+```
+
+For development:
+
+```bash
+git clone https://github.com/vatsa31/herdr-jira.git
+cd herdr-jira
+cargo build --release --locked
+herdr plugin link "$PWD"
+```
+
+Existing `herdr-jira` configuration and `api_token_cmd` credentials continue to
+work. The sidebar defaults to the first configured filter, or to unresolved
+issues assigned to the current user when no filter exists. An optional named
+filter can be selected without duplicating JQL:
+
+```toml
+[sidebar]
+enabled = true
+title = "My Jira issues"
+filter = "My open issues"
+```
+
+For credential-free development, run the provider with
+`HERDR_JIRA_MOCK=1`. The stock Herdr release can still run the pane and actions,
+but it cannot display the native sidebar section.
+
+## original plugin
+
 A Jira TUI that lives in a [herdr](https://herdr.dev) pane: browse issues through
 configurable JQL filters, search, change issue status, and delegate an issue to
 any AI agent in herdr with one key — pick a running agent, or start a new one
@@ -40,6 +116,10 @@ Works with Jira Cloud (email + API token) and Jira Server / Data Center
 used when available, with automatic fallback to the classic `/rest/api/2/search`.
 
 ## Install
+
+> [!IMPORTANT]
+> The first command below installs the upstream, pane-only plugin. Use
+> [this fork's installation](#use-this-fork) for the sidebar provider.
 
 Requires herdr **0.8.0+** and a Rust toolchain (https://rustup.rs) at install time.
 
